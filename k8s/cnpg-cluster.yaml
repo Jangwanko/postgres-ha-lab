@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pg-ha
+---
+# 애플리케이션 접속용 일반 계정 시크릿
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-user-secret
+  namespace: pg-ha
+type: kubernetes.io/basic-auth
+stringData:
+  username: appuser
+  password: appuser-pass
+---
+# postgres 슈퍼유저 계정 시크릿
+apiVersion: v1
+kind: Secret
+metadata:
+  name: superuser-secret
+  namespace: pg-ha
+type: kubernetes.io/basic-auth
+stringData:
+  username: postgres
+  password: postgres
+---
+# CloudNativePG 클러스터 정의
+# - 인스턴스 2개(Primary 1, Replica 1)
+# - appdb 데이터베이스와 appuser 계정으로 초기화
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: pg-ha-cluster
+  namespace: pg-ha
+spec:
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:15
+  primaryUpdateStrategy: unsupervised
+  storage:
+    size: 1Gi
+  superuserSecret:
+    name: superuser-secret
+  bootstrap:
+    initdb:
+      database: appdb
+      owner: appuser
+      secret:
+        name: app-user-secret
