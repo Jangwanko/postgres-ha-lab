@@ -1,12 +1,12 @@
 # Kubernetes 적용 가이드 (CloudNativePG)
 
-이 문서는 `k8s/cnpg-cluster.yaml`을 이용해 Kubernetes에서 PostgreSQL HA를 구성하고,
-장애 전환(Failover)을 검증하는 방법을 설명합니다.
+이 문서는 `k8s/cnpg-cluster.yaml`을 이용해 Kubernetes에서 PostgreSQL HA를 구성하고
+Primary 장애 시 자동 승격을 검증하는 절차를 설명합니다.
 
 ## 1. 준비
 
 - `kubectl` 설치
-- `kind` 설치(로컬 클러스터 실습 시)
+- `kind` 설치 (로컬 실습 기준)
 
 ## 2. kind 클러스터 생성
 
@@ -31,11 +31,11 @@ kubectl get cluster -n pg-ha
 kubectl get pods -n pg-ha -o wide
 ```
 
-정상 상태 기준:
-- `cluster`의 `READY`가 `2`
+정상 상태:
+- `cluster`의 `READY` 값이 `2`
 - Pod 2개가 `Running`
 
-## 5. 장애 전환(Failover) 검증
+## 5. Failover 검증
 
 현재 Primary 확인:
 
@@ -43,7 +43,7 @@ kubectl get pods -n pg-ha -o wide
 kubectl get cluster pg-ha-cluster -n pg-ha -o jsonpath="{.status.currentPrimary}"
 ```
 
-Primary Pod 삭제(장애 유도):
+Primary Pod 삭제:
 
 ```powershell
 kubectl delete pod <현재-primary-pod-이름> -n pg-ha --wait=false
@@ -63,8 +63,8 @@ kubectl exec -n pg-ha pg-ha-cluster-1 -- psql -U postgres -d postgres -t -A -c "
 kubectl exec -n pg-ha pg-ha-cluster-2 -- psql -U postgres -d postgres -t -A -c "select pg_is_in_recovery();"
 ```
 
-- `f` : Primary
-- `t` : Replica
+- `f` = Primary
+- `t` = Replica
 
 ## 6. 이벤트 확인
 
@@ -72,7 +72,7 @@ kubectl exec -n pg-ha pg-ha-cluster-2 -- psql -U postgres -d postgres -t -A -c "
 kubectl get events -n pg-ha --sort-by=.lastTimestamp
 ```
 
-확인 포인트:
+확인 키워드:
 - `FailingOver`
 - `FailoverTarget`
 

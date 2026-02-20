@@ -1,0 +1,18 @@
+project_name = "postgres-ha-lab"
+region       = "ap-northeast-2"
+
+vpc_cidr        = "10.20.0.0/16"
+azs             = ["ap-northeast-2a", "ap-northeast-2c"]
+public_subnets  = ["10.20.0.0/24", "10.20.1.0/24"]
+private_subnets = ["10.20.10.0/24", "10.20.11.0/24"]
+
+eks_cluster_version    = "1.31"
+eks_node_instance_types = ["t3.medium"]
+eks_node_desired_size  = 2
+eks_node_min_size      = 1
+eks_node_max_size      = 3
+
+rds_instance_class    = "db.t4g.micro"
+rds_allocated_storage = 20
+rds_username          = "postgres"
+rds_password          = "change-me"
