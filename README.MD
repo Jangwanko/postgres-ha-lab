@@ -2,6 +2,11 @@
 
 Docker Compose와 Kubernetes(CloudNativePG) 기반으로 PostgreSQL 고가용성(HA)을 실습하는 프로젝트입니다.
 
+## 10회 측정 결과 평균 (2026-02-21, Runs=10)
+- RTO(Primary 장애 후 Replica 승격 완료 시간): **0.487초**
+- 재조인 시간(기존 Primary가 Follower로 복구 완료되는 시간): **2.935초**
+- 복구 성공률(반복 테스트 성공 비율): **100% (10/10)**
+
 ## 0) 처음 실행(Quick Start)
 처음 클론한 사용자는 아래 순서만 따라하면 됩니다.
 
@@ -172,3 +177,4 @@ K8S 정리:
 kubectl delete -f .\k8s\cnpg-cluster.yaml
 kubectl delete namespace cnpg-system
 ```
+
