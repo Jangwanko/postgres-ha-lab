@@ -1,0 +1,91 @@
+services:
+  # 고정 노드 이름은 primary.
+  # 장애 전환 이후에는 follower 역할로 재기동될 수 있다.
+  primary:
+    image: postgres:15
+    container_name: pg_primary
+    restart: unless-stopped
+    environment:
+      # 클러스터 현재 리더 상태 파일(shared).
+      # 값은 "primary" 또는 "replica".
+      NODE_NAME: primary
+      PEER_NODE: replica
+      STATE_FILE: /cluster-state/current_primary
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: appdb
+    volumes:
+      # 노드별 영속 데이터 볼륨
+      - primary_data:/var/lib/postgresql/data
+      # 두 노드가 공통으로 사용하는 HA 시작 스크립트
+      - ./scripts/postgres-ha-node.sh:/postgres-ha-node.sh:ro
+      # failover-manager/양쪽 노드가 공유하는 상태 디렉터리
+      - ./cluster-state:/cluster-state
+      # PostgreSQL 설정 파일
+      - ./postgres/primary-init/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./postgres/primary-init/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      # WAL 아카이브 경로
+      - ./archive/wal_archive:/wal_archive
+    command: bash /postgres-ha-node.sh
+    ports:
+      - "5432:5432"
+
+  # 고정 노드 이름은 replica.
+  # 장애 전환 이후에는 leader 역할로 승격될 수 있다.
+  replica:
+    image: postgres:15
+    container_name: pg_replica
+    restart: unless-stopped
+    depends_on:
+      - primary
+    environment:
+      NODE_NAME: replica
+      PEER_NODE: primary
+      STATE_FILE: /cluster-state/current_primary
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: appdb
+    volumes:
+      - replica_data:/var/lib/postgresql/data
+      - ./scripts/postgres-ha-node.sh:/postgres-ha-node.sh:ro
+      - ./cluster-state:/cluster-state
+      - ./postgres/primary-init/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./postgres/primary-init/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - ./archive/wal_archive:/wal_archive
+    command: bash /postgres-ha-node.sh
+    ports:
+      - "5433:5432"
+
+  # 클러스터 감시자:
+  # 1) 리더 헬스체크
+  # 2) follower 승격
+  # 3) 완전 복구를 위한 중지 노드 자동 재기동
+  failover-manager:
+    image: docker:27-cli
+    container_name: pg_failover_manager
+    depends_on:
+      - primary
+      - replica
+    volumes:
+      - ./scripts/failover-manager.sh:/failover-manager.sh:ro
+      - ./cluster-state:/cluster-state
+      # 노드 컨테이너 inspect/start를 위해 Docker 소켓이 필요하다.
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: sh /failover-manager.sh
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+
+volumes:
+  primary_data:
+  replica_data:
