@@ -127,3 +127,30 @@ docker compose up -d
 docker compose down
 Remove-Item -Force .\cluster-state\current_primary -ErrorAction SilentlyContinue
 ```
+
+## 8. Prometheus / Grafana 확인
+
+이 프로젝트에는 모니터링 컨테이너가 함께 올라옵니다.
+
+- Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3000`
+- Exporter: `postgres-exporter-primary`, `postgres-exporter-replica` (내부 9187 포트)
+
+### Prometheus에서 확인할 것
+
+1. `Status > Targets` 메뉴 진입
+2. `postgres_primary`, `postgres_replica` 잡(target)이 `UP` 상태인지 확인
+
+참고:
+- 이 프로젝트는 exporter를 이미 포함합니다.
+- Prometheus는 `postgres-exporter-primary:9187`, `postgres-exporter-replica:9187`를 수집합니다.
+
+### Grafana에서 확인할 것
+
+1. `http://localhost:3000` 접속
+2. 기본 계정으로 로그인 (초기값은 Grafana 기본값 사용)
+3. Data Source에 Prometheus(`http://prometheus:9090`) 추가
+4. PostgreSQL 대시보드(import) 후 패널 값 확인
+
+권장:
+- 기본 PostgreSQL 대시보드 JSON을 저장소에 함께 제공하면 포트폴리오 완성도가 더 높아집니다.

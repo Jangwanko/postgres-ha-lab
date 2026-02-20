@@ -76,6 +76,9 @@ services:
 
   prometheus:
     image: prom/prometheus
+    depends_on:
+      - postgres-exporter-primary
+      - postgres-exporter-replica
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
     ports:
@@ -85,6 +88,26 @@ services:
     image: grafana/grafana
     ports:
       - "3000:3000"
+
+  # primary 노드 메트릭 수집용 postgres_exporter
+  postgres-exporter-primary:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: pg_exporter_primary
+    depends_on:
+      - primary
+    environment:
+      DATA_SOURCE_NAME: "postgresql://postgres:postgres@primary:5432/postgres?sslmode=disable"
+    restart: unless-stopped
+
+  # replica 노드 메트릭 수집용 postgres_exporter
+  postgres-exporter-replica:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: pg_exporter_replica
+    depends_on:
+      - replica
+    environment:
+      DATA_SOURCE_NAME: "postgresql://postgres:postgres@replica:5432/postgres?sslmode=disable"
+    restart: unless-stopped
 
 volumes:
   primary_data:
