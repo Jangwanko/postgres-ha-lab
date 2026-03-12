@@ -1,41 +1,26 @@
 services:
-  pg-node-1:
-    image: soldevelo/postgresql-repmgr:latest
-    container_name: pg_node1
+  primary:
+    image: postgres:15
+    container_name: pg_primary
     restart: unless-stopped
     environment:
-      POSTGRESQL_POSTGRES_PASSWORD: postgres
-      POSTGRESQL_USERNAME: appuser
-      POSTGRESQL_PASSWORD: appuserpass
-      POSTGRESQL_DATABASE: appdb
-      REPMGR_PASSWORD: repmgrpass
-      REPMGR_PRIMARY_HOST: ${REPMGR_PRIMARY_HOST_NODE1:-pg-node-1}
-      REPMGR_PARTNER_NODES: pg-node-1,pg-node-2,pg-node-3
-      REPMGR_NODE_NAME: pg-node-1
-      REPMGR_NODE_NETWORK_NAME: pg-node-1
-      REPMGR_NODE_ID: "1"
-      REPMGR_NODE_PRIORITY: "100"
-      REPMGR_PORT_NUMBER: "5432"
-      REPMGR_PRIMARY_PORT: "5432"
+      NODE_NAME: primary
+      PEER_NODE: replica
+      STATE_FILE: /cluster-state/current_primary
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: appdb
     volumes:
-<<<<<<< HEAD
-      # 노드별 영속 데이터 볼륨
       - primary_data:/var/lib/postgresql/data
-      # 두 노드가 공통으로 사용하는 HA 시작 스크립트
       - ./scripts-fixed/postgres-ha-node.sh:/postgres-ha-node.sh:ro
-      # failover-manager/양쪽 노드가 공유하는 상태 디렉터리
       - ./cluster-state:/cluster-state
-      # PostgreSQL 설정 파일
       - ./postgres/primary-init/postgresql.conf:/etc/postgresql/postgresql.conf:ro
       - ./postgres/primary-init/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
-      # WAL 아카이브 경로
       - ./archive/wal_archive:/wal_archive
     command: bash /postgres-ha-node.sh
     ports:
       - "5432:5432"
 
-  # 고정 노드 이름은 replica.
-  # 장애 전환 이후에는 leader 역할로 승격될 수 있다.
   replica:
     image: postgres:15
     container_name: pg_replica
@@ -57,24 +42,9 @@ services:
       - ./postgres/primary-init/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
       - ./archive/wal_archive:/wal_archive
     command: bash /postgres-ha-node.sh
-=======
-      - node1_data:/bitnami/postgresql
->>>>>>> 256d885e1487bea6ff565c61f3d7adb05d0e1dae
     ports:
       - "5433:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "PGPASSWORD=postgres /opt/bitnami/postgresql/bin/pg_isready -h 127.0.0.1 -U postgres -d postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 6
-    networks:
-      - pg-ha
 
-<<<<<<< HEAD
-  # 클러스터 감시자:
-  # 1) 리더 헬스체크
-  # 2) follower 승격
-  # 3) 완전 복구를 위한 중지 노드 자동 재기동
   failover-manager:
     image: docker:27-cli
     container_name: pg_failover_manager
@@ -84,192 +54,10 @@ services:
     volumes:
       - ./scripts-fixed/failover-manager.sh:/failover-manager.sh:ro
       - ./cluster-state:/cluster-state
-      # 노드 컨테이너 inspect/start를 위해 Docker 소켓이 필요하다.
       - /var/run/docker.sock:/var/run/docker.sock
     command: sh /failover-manager.sh
-=======
-  pg-node-2:
-    image: soldevelo/postgresql-repmgr:latest
-    container_name: pg_node2
->>>>>>> 256d885e1487bea6ff565c61f3d7adb05d0e1dae
     restart: unless-stopped
-    depends_on:
-      - pg-node-1
-    environment:
-      POSTGRESQL_POSTGRES_PASSWORD: postgres
-      POSTGRESQL_USERNAME: appuser
-      POSTGRESQL_PASSWORD: appuserpass
-      POSTGRESQL_DATABASE: appdb
-      REPMGR_PASSWORD: repmgrpass
-      REPMGR_PRIMARY_HOST: ${REPMGR_PRIMARY_HOST_NODE2:-pg-node-1}
-      REPMGR_PARTNER_NODES: pg-node-1,pg-node-2,pg-node-3
-      REPMGR_NODE_NAME: pg-node-2
-      REPMGR_NODE_NETWORK_NAME: pg-node-2
-      REPMGR_NODE_ID: "2"
-      REPMGR_NODE_PRIORITY: "90"
-      REPMGR_PORT_NUMBER: "5432"
-      REPMGR_PRIMARY_PORT: "5432"
-    volumes:
-      - node2_data:/bitnami/postgresql
-    ports:
-      - "5434:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "PGPASSWORD=postgres /opt/bitnami/postgresql/bin/pg_isready -h 127.0.0.1 -U postgres -d postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 6
-    networks:
-      - pg-ha
 
-  pg-node-3:
-    image: soldevelo/postgresql-repmgr:latest
-    container_name: pg_node3
-    restart: unless-stopped
-    depends_on:
-      - pg-node-1
-    environment:
-      POSTGRESQL_POSTGRES_PASSWORD: postgres
-      POSTGRESQL_USERNAME: appuser
-      POSTGRESQL_PASSWORD: appuserpass
-      POSTGRESQL_DATABASE: appdb
-      REPMGR_PASSWORD: repmgrpass
-      REPMGR_PRIMARY_HOST: ${REPMGR_PRIMARY_HOST_NODE3:-pg-node-1}
-      REPMGR_PARTNER_NODES: pg-node-1,pg-node-2,pg-node-3
-      REPMGR_NODE_NAME: pg-node-3
-      REPMGR_NODE_NETWORK_NAME: pg-node-3
-      REPMGR_NODE_ID: "3"
-      REPMGR_NODE_PRIORITY: "80"
-      REPMGR_PORT_NUMBER: "5432"
-      REPMGR_PRIMARY_PORT: "5432"
-    volumes:
-      - node3_data:/bitnami/postgresql
-    ports:
-      - "5435:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "PGPASSWORD=postgres /opt/bitnami/postgresql/bin/pg_isready -h 127.0.0.1 -U postgres -d postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 6
-    networks:
-      - pg-ha
-
-  pgpool:
-    image: mrgreen007/pgpool:4.6.4
-    container_name: pgpool
-    restart: unless-stopped
-    depends_on:
-      - pg-node-1
-      - pg-node-2
-      - pg-node-3
-    environment:
-      PGPOOL_BACKEND_NODES: 0:pg-node-1:5432,1:pg-node-2:5432,2:pg-node-3:5432
-      PGPOOL_ENABLE_LOAD_BALANCING: "yes"
-      PGPOOL_SR_CHECK_USER: postgres
-      PGPOOL_SR_CHECK_PASSWORD: postgres
-      PGPOOL_HEALTH_CHECK_USER: postgres
-      PGPOOL_HEALTH_CHECK_PASSWORD: postgres
-      PGPOOL_POSTGRES_USERNAME: postgres
-      PGPOOL_POSTGRES_PASSWORD: postgres
-      PGPOOL_POSTGRES_CUSTOM_USERS: appuser
-      PGPOOL_POSTGRES_CUSTOM_PASSWORDS: appuserpass
-      PGPOOL_ADMIN_USERNAME: admin
-      PGPOOL_ADMIN_PASSWORD: adminpass
-    ports:
-      - "5432:5432"
-      - "9898:9898"
-    healthcheck:
-      test: ["CMD-SHELL", "bash -lc ': > /dev/tcp/127.0.0.1/5432'"]
-      interval: 10s
-      timeout: 5s
-      retries: 6
-    networks:
-      - pg-ha
-
-  postgres-exporter-node1:
-    image: quay.io/prometheuscommunity/postgres-exporter:latest
-    container_name: pg_exporter_node1
-    restart: unless-stopped
-    depends_on:
-      - pg-node-1
-    environment:
-      DATA_SOURCE_NAME: postgresql://postgres:postgres@pg-node-1:5432/postgres?sslmode=disable
-      PG_EXPORTER_EXTEND_QUERY_PATH: /etc/postgres-exporter/queries.yaml
-    volumes:
-      - ./monitoring/postgres-exporter/queries.yaml:/etc/postgres-exporter/queries.yaml:ro
-    networks:
-      - pg-ha
-
-  postgres-exporter-node2:
-    image: quay.io/prometheuscommunity/postgres-exporter:latest
-    container_name: pg_exporter_node2
-    restart: unless-stopped
-    depends_on:
-      - pg-node-2
-    environment:
-      DATA_SOURCE_NAME: postgresql://postgres:postgres@pg-node-2:5432/postgres?sslmode=disable
-      PG_EXPORTER_EXTEND_QUERY_PATH: /etc/postgres-exporter/queries.yaml
-    volumes:
-      - ./monitoring/postgres-exporter/queries.yaml:/etc/postgres-exporter/queries.yaml:ro
-    networks:
-      - pg-ha
-
-  postgres-exporter-node3:
-    image: quay.io/prometheuscommunity/postgres-exporter:latest
-    container_name: pg_exporter_node3
-    restart: unless-stopped
-    depends_on:
-      - pg-node-3
-    environment:
-      DATA_SOURCE_NAME: postgresql://postgres:postgres@pg-node-3:5432/postgres?sslmode=disable
-      PG_EXPORTER_EXTEND_QUERY_PATH: /etc/postgres-exporter/queries.yaml
-    volumes:
-      - ./monitoring/postgres-exporter/queries.yaml:/etc/postgres-exporter/queries.yaml:ro
-    networks:
-      - pg-ha
-
-  prometheus:
-    image: prom/prometheus:v2.54.1
-    container_name: prometheus
-    restart: unless-stopped
-    depends_on:
-      - postgres-exporter-node1
-      - postgres-exporter-node2
-      - postgres-exporter-node3
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.path=/prometheus"
-      - "--web.enable-lifecycle"
-    volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./monitoring/alerts:/etc/prometheus/rules:ro
-      - prometheus_data:/prometheus
-    ports:
-      - "9090:9090"
-    networks:
-      - pg-ha
-
-  grafana:
-    image: grafana/grafana:11.2.0
-    container_name: grafana
-    restart: unless-stopped
-    depends_on:
-      - prometheus
-    environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
-      GF_USERS_ALLOW_SIGN_UP: "false"
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
-    ports:
-      - "3000:3000"
-<<<<<<< HEAD
-    volumes:
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
-      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
-
-  # primary 노드 메트릭 수집용 postgres_exporter
   postgres-exporter-primary:
     image: quay.io/prometheuscommunity/postgres-exporter:v0.15.0
     container_name: pg_exporter_primary
@@ -279,7 +67,6 @@ services:
       DATA_SOURCE_NAME: "postgresql://postgres:postgres@primary:5432/postgres?sslmode=disable"
     restart: unless-stopped
 
-  # replica 노드 메트릭 수집용 postgres_exporter
   postgres-exporter-replica:
     image: quay.io/prometheuscommunity/postgres-exporter:v0.15.0
     container_name: pg_exporter_replica
@@ -288,10 +75,25 @@ services:
     environment:
       DATA_SOURCE_NAME: "postgresql://postgres:postgres@replica:5432/postgres?sslmode=disable"
     restart: unless-stopped
-=======
-    networks:
-      - pg-ha
->>>>>>> 256d885e1487bea6ff565c61f3d7adb05d0e1dae
+
+  prometheus:
+    image: prom/prometheus
+    depends_on:
+      - postgres-exporter-primary
+      - postgres-exporter-replica
+      - ha-metrics-exporter
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
 
   ha-metrics-exporter:
     image: prom/node-exporter:v1.8.1
@@ -303,12 +105,5 @@ services:
     restart: unless-stopped
 
 volumes:
-  node1_data:
-  node2_data:
-  node3_data:
-  prometheus_data:
-  grafana_data:
-
-networks:
-  pg-ha:
-    name: pg_ha_net
+  primary_data:
+  replica_data:
