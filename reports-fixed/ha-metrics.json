@@ -1,0 +1,39 @@
+﻿{
+    "runs":  5,
+    "success_count":  5,
+    "success_rate_percent":  100,
+    "avg_rto_seconds":  0.515,
+    "avg_rejoin_seconds":  3.051,
+    "results":  [
+                    {
+                        "run":  1,
+                        "rto_seconds":  0.566,
+                        "rejoin_seconds":  3.534,
+                        "success":  true
+                    },
+                    {
+                        "run":  2,
+                        "rto_seconds":  0.466,
+                        "rejoin_seconds":  2.52,
+                        "success":  true
+                    },
+                    {
+                        "run":  3,
+                        "rto_seconds":  0.53,
+                        "rejoin_seconds":  3.407,
+                        "success":  true
+                    },
+                    {
+                        "run":  4,
+                        "rto_seconds":  0.497,
+                        "rejoin_seconds":  2.354,
+                        "success":  true
+                    },
+                    {
+                        "run":  5,
+                        "rto_seconds":  0.517,
+                        "rejoin_seconds":  3.439,
+                        "success":  true
+                    }
+                ]
+}

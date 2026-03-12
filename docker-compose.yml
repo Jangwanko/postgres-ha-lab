@@ -18,7 +18,7 @@ services:
       # 노드별 영속 데이터 볼륨
       - primary_data:/var/lib/postgresql/data
       # 두 노드가 공통으로 사용하는 HA 시작 스크립트
-      - ./scripts/postgres-ha-node.sh:/postgres-ha-node.sh:ro
+      - ./scripts-fixed/postgres-ha-node.sh:/postgres-ha-node.sh:ro
       # failover-manager/양쪽 노드가 공유하는 상태 디렉터리
       - ./cluster-state:/cluster-state
       # PostgreSQL 설정 파일
@@ -47,7 +47,7 @@ services:
       POSTGRES_DB: appdb
     volumes:
       - replica_data:/var/lib/postgresql/data
-      - ./scripts/postgres-ha-node.sh:/postgres-ha-node.sh:ro
+      - ./scripts-fixed/postgres-ha-node.sh:/postgres-ha-node.sh:ro
       - ./cluster-state:/cluster-state
       - ./postgres/primary-init/postgresql.conf:/etc/postgresql/postgresql.conf:ro
       - ./postgres/primary-init/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
@@ -67,7 +67,7 @@ services:
       - primary
       - replica
     volumes:
-      - ./scripts/failover-manager.sh:/failover-manager.sh:ro
+      - ./scripts-fixed/failover-manager.sh:/failover-manager.sh:ro
       - ./cluster-state:/cluster-state
       # 노드 컨테이너 inspect/start를 위해 Docker 소켓이 필요하다.
       - /var/run/docker.sock:/var/run/docker.sock
@@ -88,6 +88,9 @@ services:
     image: grafana/grafana
     ports:
       - "3000:3000"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
 
   # primary 노드 메트릭 수집용 postgres_exporter
   postgres-exporter-primary:
@@ -107,6 +110,15 @@ services:
       - replica
     environment:
       DATA_SOURCE_NAME: "postgresql://postgres:postgres@replica:5432/postgres?sslmode=disable"
+    restart: unless-stopped
+
+  ha-metrics-exporter:
+    image: prom/node-exporter:v1.8.1
+    container_name: ha_metrics_exporter
+    command:
+      - "--collector.textfile.directory=/textfile"
+    volumes:
+      - ./reports-fixed:/textfile
     restart: unless-stopped
 
 volumes:

@@ -1,0 +1,18 @@
+# HELP ha_runs_total Total HA test runs
+# TYPE ha_runs_total gauge
+ha_runs_total 5
+# HELP ha_success_count Successful HA test runs
+# TYPE ha_success_count gauge
+ha_success_count 5
+# HELP ha_success_rate_percent Success rate in percent
+# TYPE ha_success_rate_percent gauge
+ha_success_rate_percent 100
+# HELP ha_rto_seconds_avg Average failover RTO in seconds
+# TYPE ha_rto_seconds_avg gauge
+ha_rto_seconds_avg 0.515
+# HELP ha_rejoin_seconds_avg Average rejoin time in seconds
+# TYPE ha_rejoin_seconds_avg gauge
+ha_rejoin_seconds_avg 3.051
+# HELP ha_last_run_timestamp_seconds Unix timestamp of last measurement
+# TYPE ha_last_run_timestamp_seconds gauge
+ha_last_run_timestamp_seconds 1773336053

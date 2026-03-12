@@ -15,10 +15,10 @@ Docker Compose와 Kubernetes(CloudNativePG) 기반으로 PostgreSQL 고가용성
 - `prometheus`, `grafana`: 관측/시각화
 - `cluster-state/current_primary`: 현재 리더 상태 공유 파일
 
-## 최근 성능 지표 (2026-02-21, Runs=10)
-- RTO(Primary 장애 후 Replica 승격 완료 시간): **0.487초**
-- 재조인 시간(기존 Primary가 Follower로 복구 완료되는 시간): **2.935초**
-- 복구 성공률(반복 테스트 성공 비율): **100% (10/10)**
+## 최근 성능 지표 (2026-03-13, Runs=5, FailoverWait=10s)
+- RTO(Primary 장애 후 Replica 승격 완료 시간): **0.515초**
+- 재조인 시간(기존 Primary가 Follower로 복구 완료되는 시간): **3.051초**
+- 복구 성공률(반복 테스트 성공 비율): **100% (5/5)**
 
 ## 포트폴리오 사용법
 면접관/리뷰어가 빠르게 검증하는 권장 순서입니다.
@@ -56,6 +56,7 @@ bash scripts/run-tests.sh 3
 3. 결과 확인
 - 역할 상태: `cluster-state/current_primary`
 - 지표 리포트: `reports/ha-metrics.json`, `reports/ha-metrics.md`
+- `reports` 경로에 쓰기 권한이 없으면 `reports-fixed/`에 생성됨
 
 4. 정리
 ```powershell
@@ -85,7 +86,7 @@ docker exec pg_replica psql -U postgres -d postgres -t -A -c "select pg_is_in_re
 ## 운영 지표 측정
 PowerShell:
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\measure-ha-metrics.ps1 -Runs 5
+powershell -ExecutionPolicy Bypass -File .\scripts\measure-ha-metrics.ps1 -Runs 5 -FailoverWaitSeconds 10
 ```
 
 Linux/macOS/CI:
@@ -96,10 +97,12 @@ bash scripts/measure-ha-metrics.sh 5
 생성 파일:
 - `reports/ha-metrics.json`
 - `reports/ha-metrics.md`
+- 권한 이슈 시: `reports-fixed/ha-metrics.json`, `reports-fixed/ha-metrics.md`
 
 ## 모니터링과 로그
 - Prometheus: `http://localhost:9090`
 - Grafana: `http://localhost:3000`
+- Grafana 대시보드: `HA Metrics` (측정 스크립트 실행 시 `reports-fixed/ha-metrics.prom` 갱신)
 - 컨테이너 로그 확인:
 ```powershell
 docker compose logs -f
