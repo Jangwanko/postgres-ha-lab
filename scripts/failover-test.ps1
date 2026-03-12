@@ -1,45 +1,39 @@
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $false
 
-# 종단 간(E2E) 검증 스크립트:
-# 1) primary 중지
-# 2) replica 자동 승격 확인
-# 3) primary 자동 재기동 및 follower 재조인 확인
-Write-Host "Stopping primary to simulate failure..."
-docker stop pg_primary | Out-Null
+. "$PSScriptRoot\ha-common.ps1"
 
-Write-Host "Waiting for automatic failover (replica promotion)..."
-$ok = $false
-for ($i = 0; $i -lt 60; $i++) {
-  $state = ""
-  try {
-    $state = (docker exec pg_replica psql -U postgres -d postgres -t -A -c "select pg_is_in_recovery();" 2>$null).Trim()
-  } catch {}
-  $leader = (Get-Content .\cluster-state\current_primary -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
-  if ($state -eq "f" -and $leader -eq "replica") {
-    $ok = $true
-    break
-  }
-  Start-Sleep -Seconds 2
+Write-Host "[TEST] waiting for Pgpool endpoint..."
+if (-not (Wait-ForPgpool)) {
+  throw "Pgpool endpoint is not ready."
 }
 
-if (-not $ok) {
-  throw "Failover did not complete in time."
+$oldPrimary = Get-CurrentPrimary
+if (-not $oldPrimary) {
+  throw "Current primary was not detected."
 }
 
-Write-Host "Waiting for automatic primary restart and resync as follower..."
+Write-Host "[TEST] current primary: $oldPrimary"
+Write-Host "[TEST] simulating primary crash..."
+docker kill $oldPrimary | Out-Null
 
-for ($i = 0; $i -lt 90; $i++) {
-  $oldPrimaryState = ""
-  try {
-    $oldPrimaryState = (docker exec pg_primary psql -U postgres -d postgres -t -A -c "select pg_is_in_recovery();" 2>$null).Trim()
-  } catch {}
-  $leader = (Get-Content .\cluster-state\current_primary -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
-  if ($oldPrimaryState -eq "t" -and $leader -eq "replica") {
-    Write-Host "Failback complete: old primary is now follower."
-    exit 0
-  }
-  Start-Sleep -Seconds 2
+Write-Host "[TEST] waiting for automatic failover..."
+$newPrimary = Wait-ForPrimaryChange -OldPrimary $oldPrimary -TimeoutSeconds 120 -IntervalSeconds 2
+if (-not $newPrimary) {
+  throw "No new primary elected within timeout."
 }
 
-throw "Failback did not complete in time."
+Write-Host "[TEST] new primary elected: $newPrimary"
+Write-Host "[TEST] running controlled rejoin for old primary..."
+powershell -ExecutionPolicy Bypass -File "$PSScriptRoot\rejoin-node.ps1" -Node $oldPrimary | Out-Null
+
+Write-Host "[TEST] waiting for old primary to rejoin as replica..."
+if (-not (Wait-ForReplicaRole -Node $oldPrimary -TimeoutSeconds 240 -IntervalSeconds 2)) {
+  throw "Old primary did not return as replica after rejoin."
+}
+
+if (-not (Wait-ForPgpool)) {
+  throw "Pgpool did not recover after failover."
+}
+
+Write-Host "[TEST] cluster recovered successfully"

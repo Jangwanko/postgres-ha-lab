@@ -1,46 +1,40 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 종단 간 HA 검증:
-# 1) primary 중지
-# 2) replica 승격 확인
-# 3) primary 자동 재기동 + follower 재조인 확인
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/ha-common.sh"
 
-echo "[TEST] stopping pg_primary..."
-docker stop pg_primary >/dev/null
+echo "[TEST] waiting for Pgpool endpoint..."
+wait_for_pgpool
 
-echo "[TEST] waiting for replica promotion..."
-ok=0
-for _ in $(seq 1 60); do
-  state="$(docker exec pg_replica psql -U postgres -d postgres -t -A -c "select pg_is_in_recovery();" 2>/dev/null | tr -d '[:space:]' || true)"
-  leader="$(tr -d '\r\n' < cluster-state/current_primary 2>/dev/null || true)"
-  if [[ "$state" == "f" && "$leader" == "replica" ]]; then
-    ok=1
-    break
-  fi
-  sleep 2
-done
-
-if [[ "$ok" -ne 1 ]]; then
-  echo "[TEST] failover did not complete in time"
+old_primary="$(get_primary)"
+if [[ -z "${old_primary}" ]]; then
+  echo "[TEST] current primary not found"
   exit 1
 fi
 
-echo "[TEST] waiting for primary auto-restart and follower rejoin..."
-ok=0
-for _ in $(seq 1 90); do
-  state="$(docker exec pg_primary psql -U postgres -d postgres -t -A -c "select pg_is_in_recovery();" 2>/dev/null | tr -d '[:space:]' || true)"
-  leader="$(tr -d '\r\n' < cluster-state/current_primary 2>/dev/null || true)"
-  if [[ "$state" == "t" && "$leader" == "replica" ]]; then
-    ok=1
-    break
-  fi
-  sleep 2
-done
+echo "[TEST] current primary: ${old_primary}"
+echo "[TEST] simulating primary crash..."
+docker kill "${old_primary}" >/dev/null
 
-if [[ "$ok" -ne 1 ]]; then
-  echo "[TEST] failback did not complete in time"
+echo "[TEST] waiting for automatic failover..."
+new_primary="$(wait_for_primary_change "${old_primary}" 120 2)" || {
+  echo "[TEST] no new primary elected within timeout"
   exit 1
-fi
+}
 
-echo "[TEST] success"
+echo "[TEST] new primary elected: ${new_primary}"
+echo "[TEST] running controlled rejoin for old primary..."
+bash "${SCRIPT_DIR}/rejoin-node.sh" "${old_primary}" >/dev/null
+
+echo "[TEST] waiting for old primary to rejoin as replica..."
+wait_for_replica_role "${old_primary}" 240 2 || {
+  echo "[TEST] old primary did not return as replica after rejoin"
+  exit 1
+}
+
+wait_for_pgpool
+
+echo "[TEST] cluster recovered successfully"
+echo "[TEST] old primary: ${old_primary}"
+echo "[TEST] new primary: ${new_primary}"

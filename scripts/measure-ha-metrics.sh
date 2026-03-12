@@ -1,108 +1,108 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 운영 지표 측정 스크립트
-# - RTO(승격 완료까지 시간)
-# - 복구 시간(기존 primary follower 재조인)
-# - 성공률
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/ha-common.sh"
 
 RUNS="${1:-5}"
 REPORT_DIR="reports"
-mkdir -p "$REPORT_DIR"
 
-total_rto=0
-total_rejoin=0
+mkdir -p "${REPORT_DIR}"
+
+total_rto_ms=0
+total_rejoin_ms=0
 success=0
-
 results_json="["
 
-for i in $(seq 1 "$RUNS"); do
-  echo "[METRIC] run $i/$RUNS"
+for i in $(seq 1 "${RUNS}"); do
+  echo "[METRIC] run ${i}/${RUNS}"
 
-  # 클린 시작
   docker compose up -d >/dev/null
-  sleep 2
+  wait_for_pgpool
 
-  start_ts="$(date +%s)"
-  docker stop pg_primary >/dev/null
+  old_primary="$(get_primary)"
+  if [[ -z "${old_primary}" ]]; then
+    echo "[METRIC] primary detection failed"
+    exit 1
+  fi
 
-  # 승격 완료 대기
-  promoted=0
-  promo_end=0
-  for _ in $(seq 1 90); do
-    state="$(docker exec pg_replica psql -U postgres -d postgres -t -A -c "select pg_is_in_recovery();" 2>/dev/null | tr -d '[:space:]' || true)"
-    leader="$(tr -d '\r\n' < cluster-state/current_primary 2>/dev/null || true)"
-    if [[ "$state" == "f" && "$leader" == "replica" ]]; then
-      promoted=1
-      promo_end="$(date +%s)"
-      break
+  start_ms="$(date +%s%3N)"
+  docker kill "${old_primary}" >/dev/null
+
+  promoted=false
+  rejoined=false
+  promo_ms=0
+  end_ms=0
+
+  if new_primary="$(wait_for_primary_change "${old_primary}" 120 1)"; then
+    promoted=true
+    promo_ms="$(date +%s%3N)"
+  else
+    new_primary=""
+  fi
+
+  if [[ "${promoted}" == true ]]; then
+    bash "${SCRIPT_DIR}/rejoin-node.sh" "${old_primary}" >/dev/null
+    if wait_for_replica_role "${old_primary}" 240 1; then
+      rejoined=true
+      end_ms="$(date +%s%3N)"
     fi
-    sleep 1
-  done
-
-  # 기존 primary 재조인 대기
-  rejoined=0
-  rejoin_end=0
-  if [[ "$promoted" -eq 1 ]]; then
-    for _ in $(seq 1 180); do
-      state="$(docker exec pg_primary psql -U postgres -d postgres -t -A -c "select pg_is_in_recovery();" 2>/dev/null | tr -d '[:space:]' || true)"
-      if [[ "$state" == "t" ]]; then
-        rejoined=1
-        rejoin_end="$(date +%s)"
-        break
-      fi
-      sleep 1
-    done
   fi
 
-  rto=-1
-  rejoin=-1
+  rto_ms=-1
+  rejoin_ms=-1
   ok=false
-  if [[ "$promoted" -eq 1 ]]; then
-    rto=$((promo_end - start_ts))
+  if [[ "${promoted}" == true ]]; then
+    rto_ms=$((promo_ms - start_ms))
   fi
-  if [[ "$rejoined" -eq 1 ]]; then
-    rejoin=$((rejoin_end - promo_end))
+  if [[ "${rejoined}" == true ]]; then
+    rejoin_ms=$((end_ms - promo_ms))
     ok=true
     success=$((success + 1))
-    total_rto=$((total_rto + rto))
-    total_rejoin=$((total_rejoin + rejoin))
+    total_rto_ms=$((total_rto_ms + rto_ms))
+    total_rejoin_ms=$((total_rejoin_ms + rejoin_ms))
   fi
 
-  results_json+="{\"run\":$i,\"rto_seconds\":$rto,\"rejoin_seconds\":$rejoin,\"success\":$ok},"
+  results_json+="{\"run\":${i},\"failed_node\":\"${old_primary}\",\"promoted_node\":\"${new_primary}\",\"rto_ms\":${rto_ms},\"rejoin_ms\":${rejoin_ms},\"success\":${ok}},"
 done
 
 results_json="${results_json%,}]"
 
-success_rate="$(awk "BEGIN { printf \"%.2f\", ($success/$RUNS)*100 }")"
-avg_rto=0
-avg_rejoin=0
-if [[ "$success" -gt 0 ]]; then
-  avg_rto="$(awk "BEGIN { printf \"%.2f\", $total_rto/$success }")"
-  avg_rejoin="$(awk "BEGIN { printf \"%.2f\", $total_rejoin/$success }")"
+success_rate="$(awk "BEGIN { printf \"%.2f\", (${success}/${RUNS})*100 }")"
+avg_rto_ms=0
+avg_rejoin_ms=0
+avg_rto_sec=0
+avg_rejoin_sec=0
+if [[ "${success}" -gt 0 ]]; then
+  avg_rto_ms="$(awk "BEGIN { printf \"%.2f\", ${total_rto_ms}/${success} }")"
+  avg_rejoin_ms="$(awk "BEGIN { printf \"%.2f\", ${total_rejoin_ms}/${success} }")"
+  avg_rto_sec="$(awk "BEGIN { printf \"%.3f\", ${avg_rto_ms}/1000 }")"
+  avg_rejoin_sec="$(awk "BEGIN { printf \"%.3f\", ${avg_rejoin_ms}/1000 }")"
 fi
 
-cat > "$REPORT_DIR/ha-metrics.json" <<JSON
+cat > "${REPORT_DIR}/ha-metrics.json" <<JSON
 {
-  "runs": $RUNS,
-  "success_count": $success,
-  "success_rate_percent": $success_rate,
-  "avg_rto_seconds": $avg_rto,
-  "avg_rejoin_seconds": $avg_rejoin,
-  "results": $results_json
+  "runs": ${RUNS},
+  "success_count": ${success},
+  "success_rate_percent": ${success_rate},
+  "avg_rto_ms": ${avg_rto_ms},
+  "avg_rto_seconds": ${avg_rto_sec},
+  "avg_rejoin_ms": ${avg_rejoin_ms},
+  "avg_rejoin_seconds": ${avg_rejoin_sec},
+  "results": ${results_json}
 }
 JSON
 
-cat > "$REPORT_DIR/ha-metrics.md" <<MD
-# HA 운영 지표 측정 결과
+cat > "${REPORT_DIR}/ha-metrics.md" <<MD
+# PostgreSQL HA 측정 결과
 
-- 측정 횟수: $RUNS
-- 성공 횟수: $success
+- 측정 횟수: ${RUNS}
+- 성공 횟수: ${success}
 - 복구 성공률: ${success_rate}%
-- 평균 RTO(승격 완료): ${avg_rto}초
-- 평균 재조인 시간(old primary follower 복귀): ${avg_rejoin}초
+- 평균 RTO: ${avg_rto_ms}ms (${avg_rto_sec}초)
+- 평균 재조인 시간: ${avg_rejoin_ms}ms (${avg_rejoin_sec}초)
 
-원본 데이터: \`reports/ha-metrics.json\`
+상세 결과는 \`reports/ha-metrics.json\`에 저장됩니다.
 MD
 
 echo "[METRIC] done: reports/ha-metrics.json, reports/ha-metrics.md"
