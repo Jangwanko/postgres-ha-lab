@@ -67,8 +67,8 @@ kubectl get pods -n pg-ha -o wide
 ```
 
 정상 상태:
-- `cluster`의 `READY` 값이 `2`
-- Pod 2개가 `Running`
+- `cluster`의 `READY` 값이 `3`
+- Pod 3개가 `Running`
 
 ## 5) Failover 검증
 현재 Primary 확인:
@@ -91,6 +91,7 @@ SQL 역할 확인:
 ```powershell
 kubectl exec -n pg-ha pg-ha-cluster-1 -- psql -U postgres -d postgres -t -A -c "select pg_is_in_recovery();"
 kubectl exec -n pg-ha pg-ha-cluster-2 -- psql -U postgres -d postgres -t -A -c "select pg_is_in_recovery();"
+kubectl exec -n pg-ha pg-ha-cluster-3 -- psql -U postgres -d postgres -t -A -c "select pg_is_in_recovery();"
 ```
 
 - `f` = Primary
@@ -105,12 +106,21 @@ kubectl get events -n pg-ha --sort-by=.lastTimestamp
 - `FailingOver`
 - `FailoverTarget`
 
-## 7) 문제 해결 팁
+## 7) 모니터링 포인트
+`k8s/cnpg-cluster.yaml`에는 `enablePodMonitor: true`가 들어 있다.  
+Prometheus Operator 환경이라면 PodMonitor를 통해 PostgreSQL 메트릭을 바로 수집할 수 있다.
+
+확인 항목:
+- Primary / Replica 역할 전환
+- replication lag
+- Pod 재시작 횟수
+- failover 이벤트 시각
+## 8) 문제 해결 팁
 1. Pod가 `Pending`이면 노드 자원(CPU/메모리) 부족 여부를 확인합니다.
 2. `cnpg-system` Pod가 준비되지 않으면 Operator 설치 단계를 다시 수행합니다.
 3. `kubectl describe pod <pod명> -n pg-ha`로 상세 이벤트를 확인합니다.
 
-## 8) 정리
+## 9) 정리
 ```powershell
 kubectl delete -f .\k8s\cnpg-cluster.yaml
 kubectl delete namespace cnpg-system

@@ -37,9 +37,12 @@ Docker Compose와 Kubernetes(CloudNativePG) 기반으로 PostgreSQL 고가용성
 5. Grafana/Prometheus 화면으로 상태 확인
 
 ## Quick Start
-처음 클론한 사용자는 아래 순서대로 진행하면 됩니다.
 
-1. 컨테이너 기동
+처음 보는 사람도 바로 실행할수 있는 사용방법입니다.
+기본적으로 도커 설치후 실행이 되어있어야합니다.
+
+1. 클러스터 기동
+
 ```powershell
 docker compose up -d
 docker compose ps
@@ -70,28 +73,22 @@ PowerShell:
 powershell -ExecutionPolicy Bypass -File .\scripts\failover-test.ps1
 ```
 
-Linux/macOS/CI:
+또는
+
 ```bash
 bash scripts/failover-test.sh
 ```
 
-역할 확인:
-```powershell
-docker exec pg_primary psql -U postgres -d postgres -t -A -c "select pg_is_in_recovery();"
-docker exec pg_replica psql -U postgres -d postgres -t -A -c "select pg_is_in_recovery();"
-```
-- `f` = Leader
-- `t` = Follower
+3. 운영 지표 측정
 
-## 운영 지표 측정
-PowerShell:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\measure-ha-metrics.ps1 -Runs 5 -FailoverWaitSeconds 10
 ```
 
-Linux/macOS/CI:
+또는
+
 ```bash
-bash scripts/measure-ha-metrics.sh 5
+bash scripts/measure-ha-metrics.sh 10
 ```
 
 생성 파일:
@@ -99,50 +96,64 @@ bash scripts/measure-ha-metrics.sh 5
 - `reports/ha-metrics.md`
 - 권한 이슈 시: `reports-fixed/ha-metrics.json`, `reports-fixed/ha-metrics.md`
 
-## 모니터링과 로그
 - Prometheus: `http://localhost:9090`
 - Grafana: `http://localhost:3000`
 - Grafana 대시보드: `HA Metrics` (측정 스크립트 실행 시 `reports-fixed/ha-metrics.prom` 갱신)
 - 컨테이너 로그 확인:
 ```powershell
-docker compose logs -f
-docker logs pg_failover_manager
+powershell -ExecutionPolicy Bypass -File .\scripts\failure-network-partition.ps1
 ```
 
-## CI/CD
-파일: `.github/workflows/ha-ci.yml`
+검증 포인트:
+- 격리된 primary 대신 새 primary가 선출되는가
+- 네트워크 복구 후 필요하면 `rejoin-node` 절차로 격리 노드를 replica로 붙일 수 있는가
 
-동작:
-1. Compose 기동
-2. Failover 테스트
-3. 지표 측정
-4. 리포트/로그 아티팩트 업로드
-5. 환경 정리
+## 모니터링
 
-## IaC (Terraform)
-경로: `infra/terraform/`
+Prometheus 설정은 [monitoring/prometheus.yml](C:\Users\rhwkd\VSC\postgres-ha-lab\monitoring\prometheus.yml)에, 경보 규칙은 [monitoring/alerts/postgres-ha-rules.yml](C:\Users\rhwkd\VSC\postgres-ha-lab\monitoring\alerts\postgres-ha-rules.yml)에 있다.
 
-자동화 대상:
-- VPC
-- EKS
-- RDS(PostgreSQL)
-- CloudWatch Dashboard
+Grafana는 프로비저닝 방식으로 바로 사용할 수 있게 구성했습니다.
 
-## Kubernetes 확장
-K8S 적용/검증 상세는 `k8s/README.MD` 참고.
+- 데이터소스: [monitoring/grafana/provisioning/datasources/prometheus.yml](C:\Users\rhwkd\VSC\postgres-ha-lab\monitoring\grafana\provisioning\datasources\prometheus.yml)
+- 대시보드: [monitoring/grafana/dashboards/postgres-ha-overview.json](C:\Users\rhwkd\VSC\postgres-ha-lab\monitoring\grafana\dashboards\postgres-ha-overview.json)
 
-## 한계와 개선 계획
-- 현재는 Docker 소켓 접근 기반 매니저 구조이므로 운영 환경에서는 권한/보안 강화 필요
-- 전용 로그 분석 스택(Loki/Promtail 또는 ELK) 추가 가능
-- 다중 AZ/백업 정책/비밀관리(Secrets Manager, Vault) 고도화 필요
+주요 메트릭:
+- `pg_up`
+- `pg_is_in_recovery`
+- `pg_replication_replay_lag_seconds`
+- `rate(pg_stat_database_xact_commit[5m])`
 
-## 디렉토리
-- `docker-compose.yml`: 로컬 HA 구성
-- `scripts/`: failover/측정/통합 실행 스크립트
-- `monitoring/`: Prometheus 설정
-- `k8s/`: CloudNativePG 매니페스트 및 가이드
-- `infra/terraform/`: AWS IaC
+## 운영 문서
 
-## 주의사항
-1. 계정/비밀번호는 실습용 기본값입니다.
-2. 운영 반영 시 TLS, 최소권한, 백업/복구 정책을 별도 설계해야 합니다.
+실제 운영 관점에서 필요한 절차는 [docs/runbook.md](C:\Users\rhwkd\VSC\postgres-ha-lab\docs\runbook.md)에 따로 정리했습니다.
+
+포함 내용:
+- 클러스터 기동과 정상 상태 확인
+- 현재 primary 판별
+- primary / replica / 네트워크 분리 장애 대응
+- 메트릭 확인 포인트
+- 로그 확인 방법
+- 정리 절차
+
+## Kubernetes와 Terraform
+
+Kubernetes와 IaC 경로도 실행해볼수 있도록 정리해 두었습니다.
+
+- Kubernetes 참조: [k8s/cnpg-cluster.yaml](C:\Users\rhwkd\VSC\postgres-ha-lab\k8s\cnpg-cluster.yaml)
+- Terraform 참조: [infra/terraform/main.tf](C:\Users\rhwkd\VSC\postgres-ha-lab\infra\terraform\main.tf)
+
+
+## 이 프로젝트의 강점
+
+- 단순한 복제 예제가 아니라 장애 실험과 복구 검증까지 포함하여 다양한 환경에 대처해볼수 있습니다.
+- 메트릭과 운영 런북이 같이 있어서 SRE 관점 설명이 가능합니다.
+- 로컬 실습용 경로와 클라우드 확장 경로를 함께 보여줍니다.
+
+## 아직 남아 있는 한계
+
+- 현재 Compose 경로는 운영형 참조 구조이지만, 진짜 운영에서는 관리형 스토리지와 네트워크 정책, 비밀 관리가 더 필요합니다.
+- 공개 이미지 가용성 이슈 때문에 일부 컨테이너 이미지는 `latest` 계열을 사용한다. 운영 배포에서는 반드시 버전 또는 digest를 고정해야 합니다.
+- Alertmanager, Loki 같은 알림/로그 스택은 아직 붙이지 않았습니다.
+- Terraform 경로는 클라우드 기반 확장 예시이고, 지금 Compose 스택과 1:1 배포 파이프라인으로 연결된 상태는 아닙니다.
+
+이걸 적어놓는 이유는, 포트폴리오에서는 “어디까지 했고 어디가 다음 단계인지”를 분명하게 보여주는 편이 더 낫다고 생각했기 때문입니다. 다음에 볼때 더 업그레이드 되어 있기를 바랍니다.

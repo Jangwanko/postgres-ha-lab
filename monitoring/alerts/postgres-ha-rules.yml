@@ -1,0 +1,29 @@
+groups:
+  - name: postgres-ha
+    rules:
+      - alert: PostgreSQLNodeDown
+        expr: pg_up == 0
+        for: 15s
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL 노드 응답 없음"
+          description: "{{ $labels.node }} 노드에서 postgres_exporter 질의가 실패했습니다."
+
+      - alert: PostgreSQLReplicationLagHigh
+        expr: pg_replication_replay_lag_seconds > 10
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "복제 지연 증가"
+          description: "{{ $labels.node }} 노드의 replay lag가 10초를 초과했습니다."
+
+      - alert: PostgreSQLNoReplica
+        expr: count(pg_is_in_recovery == 1) < 1
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "읽기 전용 복제본 부족"
+          description: "클러스터에 replica 역할을 수행하는 노드가 없습니다."

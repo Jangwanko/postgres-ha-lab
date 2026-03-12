@@ -1,8 +1,18 @@
+<<<<<<< HEAD
 ﻿apiVersion: 1
 
 providers:
   - name: "HA Metrics"
     type: file
     updateIntervalSeconds: 10
+=======
+apiVersion: 1
+
+providers:
+  - name: postgres-ha-dashboards
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+>>>>>>> 256d885e1487bea6ff565c61f3d7adb05d0e1dae
     options:
       path: /var/lib/grafana/dashboards

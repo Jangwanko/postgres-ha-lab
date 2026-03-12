@@ -7,11 +7,9 @@ param(
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $false
 
-# 운영 지표 측정 스크립트
-# - RTO: Primary 장애 후 Replica 승격 완료 시간
-# - 재조인 시간: old primary가 follower로 복귀 완료 시간
-# - 복구 성공률: 반복 테스트 성공 비율
+. "$PSScriptRoot\ha-common.ps1"
 
+<<<<<<< HEAD
 if (!(Test-Path $ReportDir)) {
   New-Item -ItemType Directory -Path $ReportDir | Out-Null
 }
@@ -26,16 +24,22 @@ try {
   if (!(Test-Path $ReportDir)) {
     New-Item -ItemType Directory -Path $ReportDir | Out-Null
   }
+=======
+$reportDir = Join-Path $PSScriptRoot "..\reports"
+if (-not (Test-Path $reportDir)) {
+  New-Item -ItemType Directory -Path $reportDir | Out-Null
+>>>>>>> 256d885e1487bea6ff565c61f3d7adb05d0e1dae
 }
 
 $results = @()
 $success = 0
-$totalRto = 0.0
-$totalRejoin = 0.0
+$totalRtoMs = 0.0
+$totalRejoinMs = 0.0
 
 for ($i = 1; $i -le $Runs; $i++) {
   Write-Host "[METRIC] run $i/$Runs"
 
+<<<<<<< HEAD
   try {
     docker start pg_primary pg_replica pg_failover_manager | Out-Null
   } catch {}
@@ -63,58 +67,79 @@ for ($i = 1; $i -le $Runs; $i++) {
       break
     }
     Start-Sleep -Seconds 1
+=======
+  docker compose up -d | Out-Null
+  if (-not (Wait-ForPgpool)) {
+    throw "Pgpool endpoint was not ready."
+>>>>>>> 256d885e1487bea6ff565c61f3d7adb05d0e1dae
   }
 
+  $oldPrimary = Get-CurrentPrimary
+  if (-not $oldPrimary) {
+    throw "Current primary was not detected."
+  }
+
+  $start = [DateTimeOffset]::UtcNow
+  docker kill $oldPrimary | Out-Null
+
+  $newPrimary = Wait-ForPrimaryChange -OldPrimary $oldPrimary -TimeoutSeconds 120 -IntervalSeconds 1
+  $promotedAt = $null
+  if ($newPrimary) {
+    $promotedAt = [DateTimeOffset]::UtcNow
+  }
+
+  $rejoinedAt = $null
   $rejoined = $false
-  $rejoinAt = $null
-  if ($promoted) {
-    for ($t = 0; $t -lt 180; $t++) {
-      $oldPrimaryState = ""
-      try {
-        $oldPrimaryState = (docker exec pg_primary psql -U postgres -d postgres -t -A -c "select pg_is_in_recovery();" 2>$null).Trim()
-      } catch {}
-      if ($oldPrimaryState -eq "t") {
-        $rejoined = $true
-        $rejoinAt = Get-Date
-        break
-      }
-      Start-Sleep -Seconds 1
+  if ($newPrimary) {
+    powershell -ExecutionPolicy Bypass -File "$PSScriptRoot\rejoin-node.ps1" -Node $oldPrimary | Out-Null
+    $rejoined = Wait-ForReplicaRole -Node $oldPrimary -TimeoutSeconds 240 -IntervalSeconds 1
+    if ($rejoined) {
+      $rejoinedAt = [DateTimeOffset]::UtcNow
     }
   }
 
-  $rto = -1.0
-  $rejoin = -1.0
-  if ($promoted) {
-    $rto = [Math]::Round((New-TimeSpan -Start $start -End $promoteAt).TotalSeconds, 3)
+  $rtoMs = -1
+  $rejoinMs = -1
+  $ok = $false
+  if ($promotedAt) {
+    $rtoMs = [Math]::Round(($promotedAt - $start).TotalMilliseconds, 0)
   }
-  if ($rejoined) {
-    $rejoin = [Math]::Round((New-TimeSpan -Start $promoteAt -End $rejoinAt).TotalSeconds, 3)
+  if ($rejoined -and $rejoinedAt) {
+    $rejoinMs = [Math]::Round(($rejoinedAt - $promotedAt).TotalMilliseconds, 0)
+    $ok = $true
     $success++
-    $totalRto += $rto
-    $totalRejoin += $rejoin
+    $totalRtoMs += $rtoMs
+    $totalRejoinMs += $rejoinMs
   }
 
   $results += [pscustomobject]@{
-    run            = $i
-    rto_seconds    = $rto
-    rejoin_seconds = $rejoin
-    success        = $rejoined
+    run           = $i
+    failed_node   = $oldPrimary
+    promoted_node = $newPrimary
+    rto_ms        = $rtoMs
+    rejoin_ms     = $rejoinMs
+    success       = $ok
   }
 }
 
 $successRate = if ($Runs -gt 0) { [Math]::Round(($success / $Runs) * 100, 2) } else { 0 }
-$avgRto = if ($success -gt 0) { [Math]::Round($totalRto / $success, 3) } else { 0 }
-$avgRejoin = if ($success -gt 0) { [Math]::Round($totalRejoin / $success, 3) } else { 0 }
+$avgRtoMs = if ($success -gt 0) { [Math]::Round($totalRtoMs / $success, 2) } else { 0 }
+$avgRejoinMs = if ($success -gt 0) { [Math]::Round($totalRejoinMs / $success, 2) } else { 0 }
+$avgRtoSec = [Math]::Round($avgRtoMs / 1000, 3)
+$avgRejoinSec = [Math]::Round($avgRejoinMs / 1000, 3)
 
 $report = [pscustomobject]@{
   runs                 = $Runs
   success_count        = $success
   success_rate_percent = $successRate
-  avg_rto_seconds      = $avgRto
-  avg_rejoin_seconds   = $avgRejoin
+  avg_rto_ms           = $avgRtoMs
+  avg_rto_seconds      = $avgRtoSec
+  avg_rejoin_ms        = $avgRejoinMs
+  avg_rejoin_seconds   = $avgRejoinSec
   results              = $results
 }
 
+<<<<<<< HEAD
 $inv = [System.Globalization.CultureInfo]::InvariantCulture
 $promLines = @(
   "# HELP ha_runs_total Total HA test runs",
@@ -145,16 +170,23 @@ $writeReport = {
   $ReportObj | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 $JsonPath
   $MdLines | Set-Content -Encoding utf8 $MdPath
 }
+=======
+$jsonPath = Join-Path $reportDir "ha-metrics.json"
+$mdPath = Join-Path $reportDir "ha-metrics.md"
+
+$report | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 $jsonPath
+>>>>>>> 256d885e1487bea6ff565c61f3d7adb05d0e1dae
 
 $md = @(
-  "# HA Metrics Report",
+  "# PostgreSQL HA Metrics",
   "",
   "- Runs: $Runs",
   "- Success count: $success",
   "- Success rate: $successRate%",
-  "- Avg RTO (promotion complete): $avgRto sec",
-  "- Avg rejoin time (old primary to follower): $avgRejoin sec",
+  "- Avg RTO: $avgRtoMs ms ($avgRtoSec sec)",
+  "- Avg rejoin time: $avgRejoinMs ms ($avgRejoinSec sec)",
   "",
+<<<<<<< HEAD
   "Raw data: $reportJsonPath"
 )
 try {
@@ -168,6 +200,11 @@ try {
   $reportMdPath = Join-Path $ReportDir "ha-metrics.md"
   & $writeReport $reportJsonPath $reportMdPath $md $report
 }
+=======
+  "See reports/ha-metrics.json for raw results."
+)
+$md | Set-Content -Encoding utf8 $mdPath
+>>>>>>> 256d885e1487bea6ff565c61f3d7adb05d0e1dae
 
 $promDir = "reports-fixed"
 if (!(Test-Path $promDir)) {
